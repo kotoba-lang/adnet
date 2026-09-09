@@ -39,6 +39,40 @@ campaigns/funnels) — `adnet` *serves third-party ads* with auction + billing.
   $0.002 impression); the host prompts an **x402 top-up** when the balance runs
   low. Settlement is periodic accrual, not per-impression.
 
+## `adnet.entitlement` — ad-funded service (a free tier paid for by advertisers)
+
+The join `core` and `billing` deliberately do not make: an impression's charge
+becomes an entitlement to run one metered unit of a service, so a publisher can
+give the service away and be paid by the advertiser instead of the user.
+`murakumo.cloud`'s free inference lane is the first caller.
+
+- `admit-impression` — the verdict for one served-and-viewed impression:
+  credit in micros, who funded it, and the viewer's new balance. Refuses, with
+  a named reason, on the four ways an ad-funded tier leaks: the **house
+  backfill** (unsold inventory funds nothing), the **unbillable impression**
+  (`charge-micros` is 0 for an impression on a CPC campaign, so a *paid* serve
+  is not evidence of revenue), the **replayed view** (the caller must present
+  a receipt it already consumed — "cannot say" refuses), and the **sub-unit
+  charge** (credit accumulates in micros; it never rounds one impression up to
+  one unit).
+- `admit-unit` — may this viewer spend balance on one unit now? Admits at
+  exactly the unit price; refuses one micro short and says how short.
+- `impressions-per-unit` — how many impressions of a campaign pay for one unit,
+  **derived** from the bid rather than configured. `nil` (not 0, not a large
+  number) when the campaign cannot fund the service at all.
+- `funding-mix` — advertiser-funded vs sponsored micros, so a declared house
+  sponsorship can never be counted as ad revenue. `:advertiser-share` is `nil`
+  with no records rather than 0%.
+- `self-check` — returns a **count** of failed invariants, not a boolean: a
+  boolean cannot separate one regression from a wholly broken build, and this
+  file compiles into a Cloudflare Worker.
+
+`:funding-share` is the fraction of ad revenue that funds service rather than
+margin. At the default `1` the free tier breaks even against the publisher's
+own list price and earns nothing — a deliberate choice, because the marginal
+cost of a self-hosted unit is not measured here and this library will not
+pretend to know the profit.
+
 ## Who uses it
 
 - **Publisher ad-server** (a Cloudflare Worker, follow-up) runs `serve` at each
@@ -52,6 +86,6 @@ campaigns/funnels) — `adnet` *serves third-party ads* with auction + billing.
 Design: superproject ADR-2607093500. Apache-2.0.
 
 ```bash
-clojure -M:test    # 7 tests / 30 assertions
+clojure -M:test    # 22 tests / 93 assertions
 clojure -M:lint
 ```
