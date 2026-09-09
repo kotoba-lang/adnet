@@ -63,6 +63,11 @@ give the service away and be paid by the advertiser instead of the user.
 - `funding-mix` — advertiser-funded vs sponsored micros, so a declared house
   sponsorship can never be counted as ad revenue. `:advertiser-share` is `nil`
   with no records rather than 0%.
+- A sponsor's `:daily-micros` is a **fleet-wide daily budget**, and
+  `admit-impression` requires `:sponsored-micros-today` to enforce it —
+  `nil` refuses (`:sponsor/spend-unknown`) rather than reading as an empty
+  budget. Without that figure the only bound on house spend is the *per-viewer*
+  daily cap, i.e. how many viewers turn up, which is not a bound.
 - `self-check` — returns a **count** of failed invariants, not a boolean: a
   boolean cannot separate one regression from a wholly broken build, and this
   file compiles into a Cloudflare Worker.
@@ -86,6 +91,6 @@ pretend to know the profit.
 Design: superproject ADR-2607093500. Apache-2.0.
 
 ```bash
-clojure -M:test    # 22 tests / 93 assertions
+clojure -M:test    # 25 tests / 106 assertions
 clojure -M:lint
 ```
