@@ -74,7 +74,13 @@
   :sponsor             optional; when present, house serves may fund from a
                        DECLARED sponsorship instead of refusing. Its
                        :funded-by names who pays, so a sponsored grant is
-                       never reported as advertiser revenue."
+                       never reported as advertiser revenue, and its
+                       :daily-micros is a FLEET-WIDE daily budget -- not a
+                       per-view or per-viewer figure. The distinction is the
+                       whole point of the field: the per-viewer daily cap
+                       bounds one viewer, so without a global budget a
+                       sponsorship is bounded only by how many viewers show
+                       up, which is not a bound at all."
   {:unit-price-micros 10000
    :funding-share 1
    :daily-unit-cap 20
@@ -136,6 +142,10 @@
                        for this impression? nil/false both refuse — see leak 3
     :balance-micros    the viewer's current service balance
     :units-today       units already granted to this viewer today
+    :sponsored-micros-today  sponsored micros ALREADY spent fleet-wide today.
+                       Required whenever the policy declares a sponsor: nil is
+                       refused rather than read as 0, because an unmeasured
+                       spend treated as zero is how a budget stops binding.
     :policy            the funding policy
 
   Returns
@@ -147,7 +157,8 @@
   A refusal is never an error state — \"this view earned nothing\" is the
   normal answer for a house backfill, and the caller renders it as \"watch
   another ad\", not as a fault."
-  [{:keys [serve charge-micros receipt-consumed? balance-micros units-today policy]}]
+  [{:keys [serve charge-micros receipt-consumed? balance-micros units-today policy]
+    :as input}]
   (let [problem (policy-problem policy)
         {:keys [unit-price-micros funding-share daily-unit-cap
                 max-balance-micros sponsor]} policy
@@ -185,9 +196,16 @@
       (let [paid? (= :paid (:kind serve))
             earned (funding-micros charge-micros funding-share)
             sponsored? (and (not (pos? earned)) (some? sponsor))
+            sponsored-spent (:sponsored-micros-today input)
+            ;; A sponsored view buys exactly one unit -- the point of a
+            ;; sponsorship is that the viewer can actually run a request,
+            ;; whereas an advertiser-funded view buys whatever the bid pays for.
+            sponsored-credit (when sponsored? unit-price-micros)
+            budget-left (when sponsored?
+                          (- (:daily-micros sponsor) (or sponsored-spent 0)))
             credited (cond
                        (pos? earned) earned
-                       sponsored? (min (:daily-micros sponsor) unit-price-micros)
+                       sponsored? sponsored-credit
                        :else 0)
             funded-by (cond
                         (pos? earned) (or (get-in serve [:campaign :advertiser])
@@ -205,6 +223,20 @@
           (and paid? (not (pos? earned)) (not sponsored?))
           {:ok? false :reason :inventory/impression-not-billable
            :bid-model (get-in serve [:campaign :bid :model])}
+
+          ;; The sponsor's budget is fleet-wide and daily, so an unmeasured
+          ;; figure must refuse: reading it as 0 would make the budget
+          ;; unbounded on exactly the day the query broke.
+          (and sponsored? (not (integer? sponsored-spent)))
+          {:ok? false :reason :sponsor/spend-unknown}
+
+          ;; Spending the LAST of the budget is allowed; going over is not.
+          ;; Stated as > so a credit that exactly finishes the budget lands --
+          ;; sponsor-budget-boundary in the tests pins both sides.
+          (and sponsored? (> sponsored-credit budget-left))
+          {:ok? false :reason :sponsor/daily-budget-exhausted
+           :sponsored-micros-today sponsored-spent
+           :daily-micros (:daily-micros sponsor)}
 
           (not (pos? credited))
           {:ok? false :reason :inventory/no-funding-available}
@@ -364,7 +396,26 @@
              (:reason (admit-unit {:balance-micros 100000 :units-today 0
                                    :policy (assoc check-policy :funding-share 1.5)})))]
          [:mix-unmeasured-is-nil
-          (nil? (:advertiser-share (funding-mix [])))]]
+          (nil? (:advertiser-share (funding-mix [])))]
+         [:sponsor-budget-binds
+          (let [pol (assoc check-policy :sponsor {:daily-micros 10000
+                                                  :funded-by "house"})]
+            (and (true? (:ok? (admit-impression (assoc base :serve house
+                                                       :charge-micros 0
+                                                       :sponsored-micros-today 0
+                                                       :policy pol))))
+                 (= :sponsor/daily-budget-exhausted
+                    (:reason (admit-impression (assoc base :serve house
+                                                      :charge-micros 0
+                                                      :sponsored-micros-today 1
+                                                      :policy pol))))))]
+         [:sponsor-spend-must-be-measured
+          (= :sponsor/spend-unknown
+             (:reason (admit-impression
+                       (assoc base :serve house :charge-micros 0
+                              :policy (assoc check-policy
+                                             :sponsor {:daily-micros 100000
+                                                       :funded-by "house"})))))]]
         failures (->> cases (remove (fn [[_ ok?]] (true? ok?))) (mapv first))]
     {:checked (count cases)
      :count (count failures)

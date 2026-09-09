@@ -47,6 +47,11 @@
                                   :receipt-consumed? true
                                   :balance-micros 0
                                   :units-today 0
+                                  ;; Supplied even for advertiser-funded views:
+                                  ;; a policy that declares a sponsor REFUSES
+                                  ;; without it, which is the point of the
+                                  ;; fleet-wide budget.
+                                  :sponsored-micros-today 0
                                   :policy policy}
                                  extra))))
 
@@ -229,3 +234,69 @@
     (is (= 0 (:count r)) (str "self-check failures: " (:failures r)))
     (is (pos? (:checked r)) "a self-check that checked nothing must not read as clean")
     (is (vector? (:failures r)))))
+
+;; ── the sponsorship budget is fleet-wide and daily ────────────────────────
+;;
+;; :daily-micros used to be consulted only as `(min daily-micros unit-price)`,
+;; which made it a per-VIEW cap and never a budget: the per-viewer daily cap
+;; bounded one viewer, so total house spend was bounded only by how many viewers
+;; turned up. The tests below are what make it a budget.
+
+(def sponsored-policy
+  (assoc policy :sponsor {:daily-micros 30000 :funded-by "murakumo house"}))
+
+(defn- sponsored-view [spent-today extra]
+  (ent/admit-impression (merge {:serve {:kind :house}
+                                :charge-micros 0
+                                :receipt-consumed? true
+                                :balance-micros 0
+                                :units-today 0
+                                :sponsored-micros-today spent-today
+                                :policy sponsored-policy}
+                               extra)))
+
+(deftest sponsor-budget-boundary
+  (testing "the last unit in the budget lands"
+    (let [v (sponsored-view 20000 {})]
+      (is (true? (:ok? v)))
+      (is (= 10000 (:funding-micros v)) "exactly the 30000th micro is spendable")))
+  (testing "one micro past the budget refuses, and reports both numbers"
+    (let [v (sponsored-view 20001 {})]
+      (is (false? (:ok? v)))
+      (is (= :sponsor/daily-budget-exhausted (:reason v)))
+      (is (= 20001 (:sponsored-micros-today v)))
+      (is (= 30000 (:daily-micros v)))))
+  (testing "an empty budget refuses the first view"
+    (is (= :sponsor/daily-budget-exhausted (:reason (sponsored-view 30000 {}))))))
+
+(deftest unmeasured-sponsor-spend-refuses-rather-than-reading-as-zero
+  (is (= :sponsor/spend-unknown
+         (:reason (ent/admit-impression {:serve {:kind :house} :charge-micros 0
+                                         :receipt-consumed? true :balance-micros 0
+                                         :units-today 0 :policy sponsored-policy})))
+      "nil spend today must not be treated as an empty budget -- that is how a
+       budget stops binding on exactly the day the query breaks")
+  (is (= :sponsor/spend-unknown (:reason (sponsored-view nil {})))))
+
+(deftest the-budget-only-applies-to-sponsored-credit
+  (testing "an advertiser-funded view is unaffected by the sponsor's budget"
+    (let [v (ent/admit-impression {:serve {:kind :paid
+                                           :campaign {:advertiser "did:key:zADV"
+                                                      :bid {:model :cpm :usd "4.00"}}}
+                                   :charge-micros 4000
+                                   :receipt-consumed? true
+                                   :balance-micros 0 :units-today 0
+                                   ;; budget long gone, and it does not matter
+                                   :sponsored-micros-today 999999
+                                   :policy sponsored-policy})]
+      (is (true? (:ok? v)))
+      (is (= 4000 (:funding-micros v)))
+      (is (false? (:sponsored? v)))))
+  (testing "and a policy with no sponsor never asks for the figure"
+    (is (true? (:ok? (ent/admit-impression {:serve {:kind :paid
+                                                    :campaign {:advertiser "a"
+                                                               :bid {:model :cpm :usd "4.00"}}}
+                                            :charge-micros 4000
+                                            :receipt-consumed? true
+                                            :balance-micros 0 :units-today 0
+                                            :policy policy}))))))
