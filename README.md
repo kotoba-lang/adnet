@@ -91,6 +91,6 @@ pretend to know the profit.
 Design: superproject ADR-2607093500. Apache-2.0.
 
 ```bash
-clojure -M:test    # 25 tests / 106 assertions
-clojure -M:lint
+kbb -M:test    # 25 tests / 106 assertions
+kbb -M:lint
 ```
