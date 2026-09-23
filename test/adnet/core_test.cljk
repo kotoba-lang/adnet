@@ -1,5 +1,5 @@
 (ns adnet.core-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [adnet.core :as adnet]
             [adnet.billing :as billing]))
 

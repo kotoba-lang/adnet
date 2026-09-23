@@ -8,7 +8,7 @@
   CLAUDE.md, question 6). Every comparison in the namespace also gets an input
   exactly on its boundary, since a test suite with passing and failing cases
   either side of a boundary still cannot see `>` flip to `>=`."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [adnet.core :as adnet]
             [adnet.billing :as billing]
             [adnet.entitlement :as ent]))
