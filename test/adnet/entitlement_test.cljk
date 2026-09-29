@@ -5,7 +5,7 @@
   that pins the REASON, not just the refusal: a negative test that only
   asserts `(not ok?)` passes when the code refuses for the wrong cause, and
   four of this workspace's agents shipped exactly that shape in one day (root
-  CLAUDE.md, question 6). Every comparison in the namespace also gets an input
+  AGENTS.md, question 6). Every comparison in the namespace also gets an input
   exactly on its boundary, since a test suite with passing and failing cases
   either side of a boundary still cannot see `>` flip to `>=`."
   (:require [kotoba.test :refer [deftest is testing]]

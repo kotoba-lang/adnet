@@ -356,7 +356,7 @@
   A count, not a boolean: a boolean cannot tell one regression from a wholly
   broken build, and this file is compiled into a Cloudflare Worker where a
   backend that accepts the code and answers wrongly is a real failure mode
-  (root CLAUDE.md, question 8). Callers may run it at deploy time."
+  (root AGENTS.md, question 8). Callers may run it at deploy time."
   []
   (let [paid {:kind :paid :campaign {:advertiser "did:key:zA" :bid {:model :cpm :usd "4.00"}}}
         house {:kind :house}
